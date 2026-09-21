@@ -107,7 +107,7 @@ jobs:
             exit 1
           fi
           echo "Workload matches the pinned upstream source."
-@@PATCH_STEP@@
+
       - name: Set up Node.js
         id: setup
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -168,6 +168,7 @@ jobs:
           label: test-unit
           send-data: false
 
+@@PATCH_STEP@@
       # ================= STAGE: TEST (integration half) =================
       # Same variables as the project's own CI integration job.
       - name: Test - integration

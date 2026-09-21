@@ -26,7 +26,8 @@ to monize:
   * `--forceExit` is on the unit half in all six configurations: in one
     process the unit suite passes and then never exits (open async handle).
   * F on the integration half needs one database per Jest worker (F'):
-    experiment/patches/, applied in F only, before measurement starts.
+    experiment/patches/, applied in F only, between the unit and integration
+    halves (the unit suite guards the upstream integration config).
 """
 
 import pathlib
@@ -57,17 +58,20 @@ INT = r'npx jest --config ./test/jest-e2e.json --testPathPatterns="test/integrat
 SERIAL = " --runInBand"
 SHARD = " --runInBand --shard=1/4"
 
-NO_PATCH_STEP = """
-      # No change to the subject's test setup in this configuration.
-"""
+NO_PATCH_STEP = ""
 
 PATCH_STEP = """
       # Config F only, integration half: one database per Jest worker (F').
       # f.patch removes the force-serial settings (`--runInBand` in the npm
       # script, `maxWorkers: 1` in test/jest-e2e.json); fprime-db.patch gives
       # each worker its own database, named by JEST_WORKER_ID. Without it the
-      # shared database fails 39 of 69 files in parallel. Applied before the
-      # measurement starts, so no stage pays for it.
+      # shared database fails 39 of 69 files in parallel.
+      #
+      # Applied AFTER the unit half, not before: the unit suite contains the
+      # project's own guard (src/common/jest-config.guard.spec.ts) asserting
+      # that the integration config is single-worker, so the unit half must see
+      # the upstream config, exactly as in B. The patch is a millisecond
+      # `git apply`, measured inside test-integration.
       - name: Apply Config F's integration change (one database per worker)
         run: |
           git apply experiment/patches/f.patch

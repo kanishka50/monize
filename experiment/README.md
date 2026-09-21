@@ -29,7 +29,8 @@ Declared changes to the subject:
 - `--forceExit` on the unit half in **all six**: run in one process, the unit
   suite passes and then never exits (an open async handle).
 - **F only, integration half:** one database per Jest worker
-  (`experiment/patches/f.patch` + `fprime-db.patch`, applied before measuring).
+  (`experiment/patches/f.patch` + `fprime-db.patch`, applied after the unit half,
+  whose own guard test checks the upstream integration config).
   Without it the shared database fails 39 of 69 files in parallel.
 
 The test stage is measured as two labels, `test-unit` and `test-integration`;
