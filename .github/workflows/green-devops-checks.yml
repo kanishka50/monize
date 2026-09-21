@@ -24,11 +24,13 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 24 }
       - name: machine
-        run: echo "RESULT machine nproc=$(nproc) mem=$(free -g | awk '/Mem/{print $2}')G cpu=$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | xargs) node=$(node -v) npm=$(npm -v)"
+        run: |
+          echo "RESULT machine nproc=$(nproc) mem=$(free -g | awk '/Mem/{print $2}')G cpu=$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | xargs) node=$(node -v) npm=$(npm -v)"
       - run: bash ../.green-devops/t.sh install npm ci
       - run: bash ../.green-devops/t.sh lint npm run lint
       - run: bash ../.green-devops/t.sh build npm run build
-      - run: echo "RESULT artefact dist=$(du -sh dist | cut -f1) files=$(find dist -type f | wc -l)"
+      - run: |
+          echo "RESULT artefact dist=$(du -sh dist | cut -f1) files=$(find dist -type f | wc -l)"
       - if: always()
         uses: actions/upload-artifact@v4
         with: { name: logs-static, path: _logs/ }
@@ -47,7 +49,8 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 24 }
       - name: machine
-        run: echo "RESULT machine nproc=$(nproc) mem=$(free -g | awk '/Mem/{print $2}')G cpu=$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | xargs)"
+        run: |
+          echo "RESULT machine nproc=$(nproc) mem=$(free -g | awk '/Mem/{print $2}')G cpu=$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | xargs)"
       - run: npm ci
       - name: unit tests
         run: |
@@ -90,7 +93,8 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 24 }
       - name: machine
-        run: echo "RESULT machine nproc=$(nproc) mem=$(free -g | awk '/Mem/{print $2}')G cpu=$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | xargs)"
+        run: |
+          echo "RESULT machine nproc=$(nproc) mem=$(free -g | awk '/Mem/{print $2}')G cpu=$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | xargs)"
       - name: apply configuration patch
         working-directory: .
         run: |
@@ -106,7 +110,8 @@ jobs:
           bash ../.green-devops/t.sh int-${{ matrix.mode }} npm run test:integration -- --json --outputFile=$LOGDIR/int-${{ matrix.mode }}.json
           node ../.green-devops/jsum.js int-${{ matrix.mode }} $LOGDIR/int-${{ matrix.mode }}.json
       - name: databases used
-        run: echo "RESULT int-${{ matrix.mode }} databases=$(PGPASSWORD=test_password psql -h localhost -U monize_test -d postgres -Atc "select string_agg(datname, ',' order by datname) from pg_database where datname like 'monize%'")"
+        run: |
+          echo "RESULT int-${{ matrix.mode }} databases=$(PGPASSWORD=test_password psql -h localhost -U monize_test -d postgres -Atc "select string_agg(datname, ',' order by datname) from pg_database where datname like 'monize%'")"
       - if: always()
         uses: actions/upload-artifact@v4
         with: { name: logs-int-${{ matrix.mode }}, path: _logs/ }
