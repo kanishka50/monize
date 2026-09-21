@@ -1,0 +1,112 @@
+# Green DevOps Stage 8 checks for subject 3 (monize backend). NOT MEASURED:
+# no energy instrument. One job per check, each on its own runner.
+name: Green DevOps checks (not measured)
+
+on:
+  push:
+    branches: [green-devops/checks]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  LOGDIR: ${{ github.workspace }}/_logs
+
+jobs:
+  static:
+    name: install + lint + build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults: { run: { working-directory: backend } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - name: machine
+        run: echo "RESULT machine nproc=$(nproc) mem=$(free -g | awk '/Mem/{print $2}')G cpu=$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | xargs) node=$(node -v) npm=$(npm -v)"
+      - run: bash ../.green-devops/t.sh install npm ci
+      - run: bash ../.green-devops/t.sh lint npm run lint
+      - run: bash ../.green-devops/t.sh build npm run build
+      - run: echo "RESULT artefact dist=$(du -sh dist | cut -f1) files=$(find dist -type f | wc -l)"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: { name: logs-static, path: _logs/ }
+
+  unit:
+    name: unit ${{ matrix.mode }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [serial, parallel]
+    defaults: { run: { working-directory: backend } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - name: machine
+        run: echo "RESULT machine nproc=$(nproc) mem=$(free -g | awk '/Mem/{print $2}')G cpu=$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | xargs)"
+      - run: npm ci
+      - name: unit tests
+        run: |
+          flag=""; [ "${{ matrix.mode }}" = serial ] && flag="--runInBand"
+          bash ../.green-devops/t.sh unit-${{ matrix.mode }} npx jest $flag --json --outputFile=$LOGDIR/unit-${{ matrix.mode }}.json
+          node ../.green-devops/jsum.js unit-${{ matrix.mode }} $LOGDIR/unit-${{ matrix.mode }}.json
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: { name: logs-unit-${{ matrix.mode }}, path: _logs/ }
+
+  integration:
+    name: integration ${{ matrix.mode }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [serial, parallel-shared-db, parallel-fprime]
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:16bc17c64a573ef34162af9298258d1aec548232985b33ed7b1eac33ba35c229
+        env:
+          POSTGRES_DB: monize_test
+          POSTGRES_USER: monize_test
+          POSTGRES_PASSWORD: test_password
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+    defaults: { run: { working-directory: backend } }
+    env:
+      DATABASE_HOST: localhost
+      DATABASE_PORT: 5432
+      DATABASE_NAME: monize_test
+      DATABASE_USER: monize_test
+      DATABASE_PASSWORD: test_password
+      JWT_SECRET: test-jwt-secret-for-ci-minimum-32-characters-long
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - name: machine
+        run: echo "RESULT machine nproc=$(nproc) mem=$(free -g | awk '/Mem/{print $2}')G cpu=$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | xargs)"
+      - name: apply configuration patch
+        working-directory: .
+        run: |
+          case "${{ matrix.mode }}" in
+            parallel-shared-db) git apply .green-devops/f.patch ;;
+            parallel-fprime)    git apply .green-devops/f.patch .green-devops/fprime-db.patch ;;
+          esac
+          git status --short
+      - run: npm ci
+      - run: npm run build
+      - name: integration tests
+        run: |
+          bash ../.green-devops/t.sh int-${{ matrix.mode }} npm run test:integration -- --json --outputFile=$LOGDIR/int-${{ matrix.mode }}.json
+          node ../.green-devops/jsum.js int-${{ matrix.mode }} $LOGDIR/int-${{ matrix.mode }}.json
+      - name: databases used
+        run: echo "RESULT int-${{ matrix.mode }} databases=$(PGPASSWORD=test_password psql -h localhost -U monize_test -d postgres -Atc "select string_agg(datname, ',' order by datname) from pg_database where datname like 'monize%'")"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: { name: logs-int-${{ matrix.mode }}, path: _logs/ }
