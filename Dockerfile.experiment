@@ -1,0 +1,29 @@
+# ---------------------------------------------------------------------------
+# ADDED FOR THE GREEN DEVOPS EXPERIMENT. Not part of the upstream project.
+#
+# Packages the artefacts the pipeline has already produced (backend/dist from
+# the build stage, backend/node_modules from the install stage) into a runnable
+# image, so that the deploy stage does not repeat the install and build stages.
+# The upstream backend/Dockerfile deliberately does repeat them. The files
+# copied mirror its production stage: dist, schema.sql, migrations, release
+# notes and the entrypoint.
+#
+# Nothing is pushed to any registry.
+# ---------------------------------------------------------------------------
+FROM node:24-slim
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+
+COPY backend/package.json backend/package-lock.json ./
+COPY backend/node_modules ./node_modules
+COPY backend/dist ./dist
+COPY database/schema.sql ./schema.sql
+COPY database/migrations ./migrations
+COPY docs/release-notes ./release-notes
+COPY backend/docker-entrypoint.sh ./docker-entrypoint.sh
+
+EXPOSE 3000
+
+CMD ["./docker-entrypoint.sh"]

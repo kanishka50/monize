@@ -1,0 +1,65 @@
+diff --git a/backend/test/helpers/per-worker-db.global-setup.ts b/backend/test/helpers/per-worker-db.global-setup.ts
+new file mode 100644
+index 000000000..80f7bcea3
+--- /dev/null
++++ b/backend/test/helpers/per-worker-db.global-setup.ts
+@@ -0,0 +1,31 @@
++import { Client } from "pg";
++
++/**
++ * Green DevOps Config F′ only: one database per Jest worker.
++ *
++ * Creates `<DATABASE_NAME>_1 … _<maxWorkers>` before any worker starts, so each
++ * worker's `dropSchema` rebuild touches only its own database. The worker
++ * count is Jest's own (`globalConfig.maxWorkers`), never chosen by hand.
++ */
++export default async function globalSetup(globalConfig: {
++  maxWorkers: number;
++}): Promise<void> {
++  const base = process.env.DATABASE_NAME || "monize_test";
++  const client = new Client({
++    host: process.env.DATABASE_HOST || "localhost",
++    port: parseInt(process.env.DATABASE_PORT || "5432"),
++    user: process.env.DATABASE_USER || "monize_user",
++    password: process.env.DATABASE_PASSWORD || "monize_password",
++    database: "postgres",
++  });
++  await client.connect();
++  for (let i = 1; i <= globalConfig.maxWorkers; i++) {
++    const name = `${base}_${i}`;
++    const { rowCount } = await client.query(
++      "SELECT 1 FROM pg_database WHERE datname = $1",
++      [name],
++    );
++    if (!rowCount) await client.query(`CREATE DATABASE "${name}"`);
++  }
++  await client.end();
++}
+diff --git a/backend/test/helpers/per-worker-db.setup.ts b/backend/test/helpers/per-worker-db.setup.ts
+new file mode 100644
+index 000000000..93e2b06a3
+--- /dev/null
++++ b/backend/test/helpers/per-worker-db.setup.ts
+@@ -0,0 +1,9 @@
++/**
++ * Green DevOps Config F′ only: point this worker at its own database.
++ *
++ * Runs before each test file. `process.env` is shared by every file a worker
++ * runs, so the base name is kept once and the suffix is never appended twice.
++ */
++const base = (process.env.F_PRIME_BASE_DATABASE_NAME ??=
++  process.env.DATABASE_NAME || "monize_test");
++process.env.DATABASE_NAME = `${base}_${process.env.JEST_WORKER_ID}`;
+diff --git a/backend/test/jest-e2e.json b/backend/test/jest-e2e.json
+index 30bffd3d4..61f5b9b6f 100644
+--- a/backend/test/jest-e2e.json
++++ b/backend/test/jest-e2e.json
+@@ -12,5 +12,7 @@
+     "node_modules/(?!(@scure|@otplib|otplib|@noble|openid-client|oauth4webapi|jose|uuid|mdb-reader)/)"
+   ],
+   "testEnvironment": "node",
+-  "testTimeout": 30000
++  "testTimeout": 30000,
++  "globalSetup": "<rootDir>/test/helpers/per-worker-db.global-setup.ts",
++  "setupFiles": ["<rootDir>/test/helpers/per-worker-db.setup.ts"]
+ }

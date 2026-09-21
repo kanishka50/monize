@@ -1,0 +1,305 @@
+# GENERATED FILE - do not edit. Regenerate with:
+#   python experiment/generate-workflows.py
+# ---------------------------------------------------------------------------
+# TEMPLATE for the single-job configurations (A Full, B Cached, C Minimal,
+# D Cached+Minimal, F Cached+Workers). Config E (Cached+Parallel) has its own
+# template because it runs as several jobs on several runners.
+#
+# Do not edit generated workflows; edit this and re-run
+#   python experiment/generate-workflows.py
+# ---------------------------------------------------------------------------
+name: Pipeline - Config C (Minimal)
+
+# ---------------------------------------------------------------------------
+# Green DevOps experiment (Phase 7), subject 3.
+#
+# Subject application: kenlasko/monize, backend/ only (NestJS + TypeORM),
+# pinned by content to upstream d162a285. Chosen as the subject whose tests
+# WAIT ON A DATABASE: its 69 integration test files share one Postgres
+# database and are forced serial upstream (`--runInBand` and `maxWorkers: 1`).
+#
+#   A Full            no cache | lint | all tests, one process
+#   B Cached          CACHE    | lint | all tests, one process
+#   C Minimal         no cache | ---- | 1/4 of tests, one process
+#   D Cached+Minimal  CACHE    | ---- | 1/4 of tests, one process
+#   E Cached+Parallel CACHE    | lint and tests as parallel jobs (other template)
+#   F Cached+Workers  CACHE    | lint | all tests, Jest's own default workers
+#
+# The test stage has TWO halves, measured separately because the treatment
+# is expected to act differently on each: unit (CPU-bound, no database) and
+# integration (one Postgres service). Both halves are sharded in C/D.
+#
+# Declared changes to the subject, applied the same way wherever they apply:
+#   - `--forceExit` on the unit half in ALL six configurations. Run in one
+#     process, the unit suite passes and then never exits (a test leaves an
+#     async handle open). It changes nothing that is tested.
+#   - Config F only: one database per Jest worker on the integration half
+#     (experiment/patches/). Without it the shared database fails 39 of 69
+#     files when run in parallel.
+# ---------------------------------------------------------------------------
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CONFIG_ID: 'C'
+  # Pinned by the CONTENT of the source, not by the commit: the experiment's
+  # own commits sit on top of the upstream commit.
+  SUBJECT_UPSTREAM_SHA: d162a2859f31114986c66d50e7605c0221ca85b3
+  SUBJECT_BACKEND_TREE: 1e384b050a65129bf616ca68d61e837b173e1eed
+  SUBJECT_DATABASE_TREE: 3e7ef73e4411ce364629c53f58dee5cb671ea8b9
+  # The test commands are set EXPLICITLY here, never inherited from the
+  # subject's npm scripts (EXPERIMENT-PLAN.md section 3).
+  UNIT_CMD: 'npx jest --forceExit --runInBand --shard=1/4'
+  INT_CMD: 'npx jest --config ./test/jest-e2e.json --testPathPatterns="test/integration/.*\.spec\.ts$" --runInBand --shard=1/4'
+  # Controls
+  TZ: UTC
+  LANG: C.UTF-8
+  FORCE_COLOR: '0'
+
+jobs:
+  run:
+    name: Config C - Minimal
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+
+    # Needed by the integration half in every configuration. Same image, by
+    # digest, as the project's own CI.
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:16bc17c64a573ef34162af9298258d1aec548232985b33ed7b1eac33ba35c229
+        env:
+          POSTGRES_DB: monize_test
+          POSTGRES_USER: monize_test
+          POSTGRES_PASSWORD: test_password
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+
+    steps:
+      - name: Log runner context
+        run: |
+          echo "RUN_STARTED=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+          echo "=== RUNNER CONTEXT (control variables) ==="
+          echo "Config:   ${{ env.CONFIG_ID }}"
+          echo "Image:    ${ImageOS:-unknown} / ${ImageVersion:-unknown}"
+          echo "CPU:      $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | xargs)"
+          echo "Cores:    $(nproc)"
+          echo "Kernel:   $(uname -r)"
+
+      - name: Clone repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Verify the measured workload is the pinned one
+        run: |
+          BACKEND_TREE="$(git rev-parse HEAD:backend)"
+          DATABASE_TREE="$(git rev-parse HEAD:database)"
+          echo "HEAD commit  : $(git rev-parse HEAD)"
+          echo "backend tree : $BACKEND_TREE"
+          fail=0
+          [ "$BACKEND_TREE"  = "${{ env.SUBJECT_BACKEND_TREE }}" ]  || { echo "::error::backend/ tree differs from the pinned workload."; fail=1; }
+          [ "$DATABASE_TREE" = "${{ env.SUBJECT_DATABASE_TREE }}" ] || { echo "::error::database/ tree differs from the pinned workload."; fail=1; }
+          if [ "$fail" = "1" ]; then
+            echo "The workload has drifted from upstream ${{ env.SUBJECT_UPSTREAM_SHA }}; do not use this run."
+            exit 1
+          fi
+          echo "Workload matches the pinned upstream source."
+
+      # No change to the subject's test setup in this configuration.
+
+      - name: Set up Node.js
+        id: setup
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.20.0'
+          # NO `cache:` key. This is an UNCACHED configuration.
+
+      # A CACHED configuration whose cache did not actually restore has silently
+      # run as an UNCACHED one. Such a run must never reach the dataset, so the
+      # run fails here instead. setup-node saves its cache only when the whole
+      # job SUCCEEDS, so the cache is created by the unmeasured cache-warmup.yml.
+      - name: Verify the cache state matches the configuration
+        run: |
+          expected='none'
+          actual='${{ steps.setup.outputs.cache-hit }}'
+          echo "cache expected: $expected | setup-node reported: '${actual:-<none>}'"
+          if [ "$expected" = "hit" ] && [ "$actual" != "true" ]; then
+            echo "::error::CACHED configuration did not restore a cache. This run would"
+            echo "::error::have measured an uncached install. Discarding it."
+            echo "::error::Run the 'Cache warm-up (not measured)' workflow, then re-dispatch."
+            exit 1
+          fi
+          if [ "$expected" = "none" ] && [ "$actual" = "true" ]; then
+            echo "::error::UNCACHED configuration restored a cache. Not a valid measurement."
+            exit 1
+          fi
+
+      - name: ECO-CI - start measurement
+        uses: green-coding-solutions/eco-ci-energy-estimation@v5
+        with:
+          task: start-measurement
+          send-data: false
+          json-output: true
+
+      # ================= STAGE: INSTALL =================
+      - name: Install dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: ECO-CI - measure install
+        uses: green-coding-solutions/eco-ci-energy-estimation@v5
+        with:
+          task: get-measurement
+          label: install
+          send-data: false
+
+      # ================= STAGE: LINT - REMOVED =================
+      # This is a MINIMAL configuration: the lint stage is not run. Lint emits
+      # no files, so no later stage loses an input. What is given up is
+      # detection, not build correctness.
+
+      # ================= STAGE: TEST (unit half) =================
+      - name: Test - unit
+        working-directory: backend
+        run: |
+          echo "+ $UNIT_CMD"
+          eval "$UNIT_CMD"
+
+      - name: ECO-CI - measure test-unit
+        uses: green-coding-solutions/eco-ci-energy-estimation@v5
+        with:
+          task: get-measurement
+          label: test-unit
+          send-data: false
+
+      # ================= STAGE: TEST (integration half) =================
+      # Same variables as the project's own CI integration job.
+      - name: Test - integration
+        working-directory: backend
+        env:
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: monize_test
+          DATABASE_USER: monize_test
+          DATABASE_PASSWORD: test_password
+          JWT_SECRET: test-jwt-secret-for-ci-minimum-32-characters-long
+          NODE_ENV: test
+        run: |
+          echo "+ $INT_CMD"
+          eval "$INT_CMD"
+
+      - name: ECO-CI - measure test-integration
+        uses: green-coding-solutions/eco-ci-energy-estimation@v5
+        with:
+          task: get-measurement
+          label: test-integration
+          send-data: false
+
+      # ================= STAGE: BUILD =================
+      - name: Build
+        working-directory: backend
+        run: npm run build
+
+      - name: ECO-CI - measure build
+        uses: green-coding-solutions/eco-ci-energy-estimation@v5
+        with:
+          task: get-measurement
+          label: build
+          send-data: false
+
+      # ================= STAGE: DEPLOY =================
+      # Packages the artefacts the preceding stages already produced into a
+      # runnable image, so each stage performs DISTINCT work. The project's own
+      # Dockerfile repeats install and build. Nothing is pushed to any registry.
+      - name: Deploy (package built app into image)
+        run: docker build -f Dockerfile.experiment -t monize-backend:packaged .
+
+      - name: ECO-CI - measure deploy
+        uses: green-coding-solutions/eco-ci-energy-estimation@v5
+        with:
+          task: get-measurement
+          label: deploy
+          send-data: false
+
+      # ================= RESULTS =================
+      - name: ECO-CI - display results
+        uses: green-coding-solutions/eco-ci-energy-estimation@v5
+        with:
+          task: display-results
+          send-data: false
+
+      - name: Write result files
+        if: always()
+        run: |
+          mkdir -p results
+          cp -r /tmp/eco-ci results/eco-ci-raw 2>/dev/null \
+            || echo "WARNING: /tmp/eco-ci not present"
+
+          CPU="$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | xargs)"
+          jq -n \
+            --arg config 'C' --arg config_name 'Minimal' \
+            --arg run_id '${{ github.run_id }}' --arg run_number '${{ github.run_number }}' \
+            --arg run_attempt '${{ github.run_attempt }}' \
+            --arg commit "$(git rev-parse HEAD)" --arg backend_tree "$(git rev-parse HEAD:backend)" \
+            --arg unit_cmd "$UNIT_CMD" --arg int_cmd "$INT_CMD" \
+            --arg patched "$(git status --short -- backend | tr '\n' ' ')" \
+            --arg image "${ImageOS:-unknown}/${ImageVersion:-unknown}" \
+            --arg cpu "$CPU" --arg cores "$(nproc)" \
+            --arg started '${{ env.RUN_STARTED }}' --arg finished "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{config: $config, config_name: $config_name, subject: "monize-backend", job: "main",
+              run_id: $run_id, run_number: $run_number, run_attempt: $run_attempt,
+              commit: $commit, backend_tree: $backend_tree, unit_cmd: $unit_cmd, int_cmd: $int_cmd,
+              backend_patched_files: $patched, runner_image: $image, cpu_model: $cpu,
+              cpu_cores: $cores, eco_power_model: "github_EPYC_7763_4_CPU_shared.sh",
+              started_utc: $started, finished_utc: $finished}' > results/meta.json
+          cat results/meta.json
+
+          VARS=results/eco-ci-raw/vars.sh
+          getvar() {
+            grep -m1 -E "^(export[[:space:]]+)?$1=" "$VARS" 2>/dev/null \
+              | sed -E "s/^(export[[:space:]]+)?$1=//" \
+              | sed -E "s/^[\"']//; s/[\"']$//"
+          }
+
+          # `job` is carried in every row because Config E runs several jobs on
+          # separate runners and a run's total energy is the SUM across them.
+          echo "config,job,run_id,run_number,cpu_model,stage_index,label,cpu_avg_pct,energy_j,power_avg_w,duration_s" > results/measurements.csv
+          i=1
+          while [ -n "$(getvar "ECO_CI_MEASUREMENT_${i}_LABEL")" ]; do
+            printf '%s,%s,%s,%s,"%s",%s,%s,%s,%s,%s,%s\n' \
+              "C" "main" \
+              "${{ github.run_id }}" "${{ github.run_number }}" "$CPU" "$i" \
+              "$(getvar "ECO_CI_MEASUREMENT_${i}_LABEL")" \
+              "$(getvar "ECO_CI_MEASUREMENT_${i}_CPU_AVG")" \
+              "$(getvar "ECO_CI_MEASUREMENT_${i}_ENERGY")" \
+              "$(getvar "ECO_CI_MEASUREMENT_${i}_POWER_AVG")" \
+              "$(getvar "ECO_CI_MEASUREMENT_${i}_TIME")" \
+              >> results/measurements.csv
+            i=$((i + 1))
+          done
+          cat results/measurements.csv
+
+          rows=$(( $(wc -l < results/measurements.csv) - 1 ))
+          if [ "$rows" -lt 5 ]; then
+            echo "::error::Parsed $rows measurement rows, expected 5. Do not collect data until this is fixed."
+            exit 1
+          fi
+
+          case "$CPU" in
+            *7763*) echo "Power model MATCHES runner CPU ($CPU)." ;;
+            *) echo "::warning::Runner CPU is '$CPU' but ECO-CI estimates with the EPYC 7763 power model. Absolute Joules carry a systematic bias - stratify by cpu_model at analysis." ;;
+          esac
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: result-C-${{ github.run_id }}-${{ github.run_attempt }}
+          path: results/
+          retention-days: 30
+          if-no-files-found: error

@@ -1,0 +1,15 @@
+# ADDED FOR THE GREEN DEVOPS EXPERIMENT. Not part of the upstream project.
+# BuildKit reads <dockerfile>.dockerignore in preference to .dockerignore, so
+# this applies ONLY to Dockerfile.experiment and leaves the project's own
+# .dockerignore untouched. The packaging image must SHIP dist/ and
+# node_modules, which the project's own ignore file excludes; everything else
+# is left out of the context.
+*
+!backend/package.json
+!backend/package-lock.json
+!backend/node_modules
+!backend/dist
+!backend/docker-entrypoint.sh
+!database/schema.sql
+!database/migrations
+!docs/release-notes

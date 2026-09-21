@@ -1,0 +1,47 @@
+# ---------------------------------------------------------------------------
+# NOT A MEASURED CONFIGURATION. Run once before collecting cached runs on a new
+# subject, or whenever GitHub has evicted the cache (after 7 days unused).
+#
+# Every cached configuration fails if its npm cache does not restore, so that
+# an uncached install can never be recorded as a cached one. But setup-node
+# saves its cache only when the whole job SUCCEEDS (`post-if: success()`), so a
+# failed cached run never creates the cache it was missing. This workflow
+# creates it instead: the same checkout, the same setup-node inputs (and so the
+# same cache key, derived from backend/package-lock.json), then `npm ci`.
+#
+# It takes no measurements and its name does not start with "Pipeline -
+# Config", so the collector never picks it up.
+# ---------------------------------------------------------------------------
+name: Cache warm-up (not measured)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  warm:
+    name: Populate the npm cache
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        id: setup
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.20.0'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Report cache state before warming
+        run: |
+          echo "setup-node cache-hit: '${{ steps.setup.outputs.cache-hit }}'"
+
+      - name: Install dependencies (fills ~/.npm, saved by setup-node's post step)
+        working-directory: backend
+        run: npm ci

@@ -1,0 +1,25 @@
+diff --git a/backend/package.json b/backend/package.json
+index 144c6b069..6c0218249 100644
+--- a/backend/package.json
++++ b/backend/package.json
+@@ -22,7 +22,7 @@
+     "test": "node scripts/test-chain.mjs",
+     "test:unit": "jest",
+     "pretest:integration": "node -e \"const{Client}=require('pg');const c=new Client({host:process.env.DATABASE_HOST||'localhost',port:+(process.env.DATABASE_PORT||5432),user:process.env.DATABASE_USER||'monize_user',password:process.env.DATABASE_PASSWORD||'monize_password',database:'postgres'});c.connect().then(()=>c.query(\\\"SELECT 1 FROM pg_database WHERE datname='monize_test'\\\").then(r=>r.rowCount?0:c.query('CREATE DATABASE monize_test')).then(()=>c.end())).catch(e=>{console.error(e.message);process.exit(1)})\"",
+-    "test:integration": "jest --config ./test/jest-e2e.json --testPathPatterns=\"test/integration/.*\\.spec\\.ts$\" --runInBand",
++    "test:integration": "jest --config ./test/jest-e2e.json --testPathPatterns=\"test/integration/.*\\.spec\\.ts$\"",
+     "test:watch": "jest --watch",
+     "test:cov": "jest --coverage",
+     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
+diff --git a/backend/test/jest-e2e.json b/backend/test/jest-e2e.json
+index 790cc8526..30bffd3d4 100644
+--- a/backend/test/jest-e2e.json
++++ b/backend/test/jest-e2e.json
+@@ -12,6 +12,5 @@
+     "node_modules/(?!(@scure|@otplib|otplib|@noble|openid-client|oauth4webapi|jose|uuid|mdb-reader)/)"
+   ],
+   "testEnvironment": "node",
+-  "testTimeout": 30000,
+-  "maxWorkers": 1
++  "testTimeout": 30000
+ }
