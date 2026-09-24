@@ -150,6 +150,9 @@ jobs:
           cache: 'npm'
           cache-dependency-path: backend/package-lock.json
 
+      - name: Fixed pause (same in SA and SB, so ECO-CI samples the setup stage)
+        run: sleep 3
+
       - name: ECO-CI - measure setup
         uses: green-coding-solutions/eco-ci-energy-estimation@v5
         with:
